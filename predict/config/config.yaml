@@ -3,20 +3,19 @@
 # Data settings
 data:
   # Path to collected data from collector
-  raw_data_path: "../data/collected"  # Path to .gz files from collector
+  raw_data_path: "../data"  # Path to .gz files from collector
   processed_data_path: "./data/processed"  # Path to save processed features
   symbols:
-    - "btcusdt"
-    - "ethusdt"
+    - "solusdt"
 
   # Time range for training/testing
-  train_start_date: "2024-01-01"
-  train_end_date: "2024-06-30"
-  test_start_date: "2024-07-01"
-  test_end_date: "2024-07-31"
+  train_start_date: "2025-09-27"
+  train_end_date: "2025-09-28"
+  test_start_date: "2025-09-29"
+  test_end_date: "2025-09-29"
 
   # Data sampling
-  sample_interval_ms: 100  # Sample interval in milliseconds
+  sample_interval_ms: 1000  # Sample interval in milliseconds (1 second)
 
 # Feature engineering settings
 features:
@@ -70,7 +69,7 @@ features:
 # Target settings
 target:
   # Prediction horizons (in seconds)
-  horizons: [5, 10, 30, 60]
+  horizons: [5]
 
   # Target type: 'return' or 'direction'
   type: "return"  # Percentage return
