@@ -1,0 +1,179 @@
+# Predict Model Configuration
+
+# Data settings
+data:
+  # Path to collected data from collector
+  raw_data_path: "../data/collected"  # Path to .gz files from collector
+  processed_data_path: "./data/processed"  # Path to save processed features
+  symbols:
+    - "btcusdt"
+    - "ethusdt"
+
+  # Time range for training/testing
+  train_start_date: "2024-01-01"
+  train_end_date: "2024-06-30"
+  test_start_date: "2024-07-01"
+  test_end_date: "2024-07-31"
+
+  # Data sampling
+  sample_interval_ms: 100  # Sample interval in milliseconds
+
+# Feature engineering settings
+features:
+  # Lookback window for feature calculation (in seconds)
+  lookback_window: 30
+
+  # Orderbook features
+  orderbook:
+    enabled: true
+    depth_levels: 10  # Number of price levels to consider
+    features:
+      - spread
+      - mid_price
+      - weighted_mid_price
+      - bid_ask_imbalance
+      - depth_imbalance
+      - orderbook_slope
+      - liquidity_metrics
+
+  # Trade features
+  trade:
+    enabled: true
+    windows: [5, 10, 30]  # Rolling windows in seconds
+    features:
+      - volume
+      - trade_count
+      - vwap
+      - buy_sell_ratio
+      - aggressive_order_ratio
+      - trade_intensity
+
+  # Technical indicators
+  technical:
+    enabled: true
+    features:
+      - returns
+      - log_returns
+      - volatility
+      - rsi
+      - momentum
+
+  # Microstructure features
+  microstructure:
+    enabled: true
+    features:
+      - order_flow_imbalance
+      - price_impact
+      - effective_spread
+      - realized_spread
+
+# Target settings
+target:
+  # Prediction horizons (in seconds)
+  horizons: [5, 10, 30, 60]
+
+  # Target type: 'return' or 'direction'
+  type: "return"  # Percentage return
+
+  # For direction classification
+  direction_threshold: 0.01  # 1% threshold for up/down classification
+
+# Model settings
+model:
+  # Model type: 'linear', 'xgboost', 'lightgbm', 'lstm', 'transformer'
+  type: "lightgbm"
+
+  # Linear models
+  linear:
+    alpha: 1.0
+    max_iter: 1000
+
+  # XGBoost
+  xgboost:
+    n_estimators: 1000
+    max_depth: 6
+    learning_rate: 0.05
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 50
+
+  # LightGBM
+  lightgbm:
+    n_estimators: 1000
+    max_depth: 6
+    learning_rate: 0.05
+    num_leaves: 31
+    subsample: 0.8
+    colsample_bytree: 0.8
+    early_stopping_rounds: 50
+    verbose: -1
+
+  # LSTM
+  lstm:
+    hidden_size: 128
+    num_layers: 2
+    dropout: 0.2
+    batch_size: 256
+    epochs: 100
+    learning_rate: 0.001
+
+  # Transformer
+  transformer:
+    d_model: 128
+    nhead: 8
+    num_layers: 4
+    dropout: 0.1
+    batch_size: 256
+    epochs: 100
+    learning_rate: 0.001
+
+# Training settings
+training:
+  # Cross-validation
+  cv_folds: 5
+  cv_type: "time_series"  # Time-series cross-validation
+
+  # Test split
+  test_size: 0.2
+
+  # Feature selection
+  feature_selection:
+    enabled: true
+    method: "importance"  # 'importance', 'correlation', 'mutual_info'
+    top_k: 100
+
+  # Random seed
+  random_seed: 42
+
+# Evaluation settings
+evaluation:
+  metrics:
+    - rmse
+    - mae
+    - r2
+    - ic  # Information coefficient
+    - rank_ic  # Rank information coefficient
+    - direction_accuracy
+    - sharpe_ratio
+
+  # Quantile analysis
+  quantiles: [0.1, 0.25, 0.5, 0.75, 0.9]
+
+  # Backtest simulation
+  backtest:
+    enabled: true
+    initial_capital: 10000
+    transaction_cost: 0.0004  # 0.04% per trade
+    position_size: 0.1  # 10% of capital per trade
+
+# Logging and output
+output:
+  model_path: "./models/saved"
+  results_path: "./results"
+  log_path: "./logs"
+  log_level: "INFO"
+
+  # Visualization
+  plot_predictions: true
+  plot_feature_importance: true
+  save_predictions: true
