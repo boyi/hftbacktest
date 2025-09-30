@@ -6,12 +6,12 @@ use std::{
 
 use anyhow::Error;
 use bincode::{
-    de::{BorrowDecoder, Decoder},
-    enc::Encoder,
-    error::{DecodeError, EncodeError},
     BorrowDecode,
     Decode,
     Encode,
+    de::{BorrowDecoder, Decoder},
+    enc::Encoder,
+    error::{DecodeError, EncodeError},
 };
 use dyn_clone::DynClone;
 use hftbacktest_derive::NpyDTyped;
@@ -584,6 +584,19 @@ impl Order {
     /// Updates this order with the given order. This is used only by the processor in backtesting
     /// or by a bot in live trading.
     pub fn update(&mut self, order: &Order) {
+        //assert!(order.exch_timestamp >= self.exch_timestamp);
+        if order.exch_timestamp < self.exch_timestamp {
+            println!(
+                "Warning: Perhaps an inaccurate order response update occurs: an order previously \
+                updated by a later exchange timestamp is updated by an earlier one. \
+                This issue is primarily caused by incorrect or inconsistent timestamp ordering \
+                across the files.\n \
+                order={:?}, \
+                response={:?}",
+                &self, &order
+            );
+        }
+
         self.qty = order.qty;
         self.leaves_qty = order.leaves_qty;
         self.price_tick = order.price_tick;
@@ -591,7 +604,6 @@ impl Order {
         self.side = order.side;
         self.time_in_force = order.time_in_force;
 
-        assert!(order.exch_timestamp >= self.exch_timestamp);
         if order.exch_timestamp > 0 {
             self.exch_timestamp = order.exch_timestamp;
         }
@@ -631,7 +643,7 @@ impl Debug for Order {
     }
 }
 
-impl Decode for Order {
+impl<Context> Decode<Context> for Order {
     fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
         Ok(Self {
             qty: Decode::decode(decoder)?,
@@ -655,7 +667,7 @@ impl Decode for Order {
     }
 }
 
-impl<'de> BorrowDecode<'de> for Order {
+impl<'de, Context> BorrowDecode<'de, Context> for Order {
     fn borrow_decode<D: BorrowDecoder<'de>>(decoder: &mut D) -> Result<Self, DecodeError> {
         Ok(Self {
             qty: Decode::decode(decoder)?,
@@ -797,7 +809,7 @@ where
     /// Clears the last market trades from the buffer.
     ///
     /// * `asset_no` - Asset number at which this command will be executed. If `None`, all last
-    ///                trades in any assets will be cleared.
+    ///   trades in any assets will be cleared.
     fn clear_last_trades(&mut self, asset_no: Option<usize>);
 
     /// Returns a hash map of order IDs and their corresponding [`Order`]s.
@@ -809,16 +821,16 @@ where
     ///
     /// * `asset_no` - Asset number at which this command will be executed.
     /// * `order_id` - The unique order ID; there should not be any existing order with the same ID
-    ///                on both local and exchange sides.
+    ///   on both local and exchange sides.
     /// * `price` - Order price.
     /// * `qty` - Quantity to buy.
     /// * `time_in_force` - Available [`TimeInForce`] options vary depending on the exchange model.
-    ///                     See to the exchange model for details.
+    ///   See to the exchange model for details.
     ///
-    ///  * `order_type` - Available [`OrdType`] options vary depending on the exchange model. See to
-    ///                   the exchange model for details.
+    /// * `order_type` - Available [`OrdType`] options vary depending on the exchange model. See to
+    ///   the exchange model for details.
     ///
-    ///  * `wait` - If true, wait until the order placement response is received.
+    /// * `wait` - If true, wait until the order placement response is received.
     #[allow(clippy::too_many_arguments)]
     fn submit_buy_order(
         &mut self,
@@ -829,22 +841,22 @@ where
         time_in_force: TimeInForce,
         order_type: OrdType,
         wait: bool,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
     /// Places a sell order.
     ///
     /// * `asset_no` - Asset number at which this command will be executed.
     /// * `order_id` - The unique order ID; there should not be any existing order with the same ID
-    ///                on both local and exchange sides.
+    ///   on both local and exchange sides.
     /// * `price` - Order price.
     /// * `qty` - Quantity to buy.
     /// * `time_in_force` - Available [`TimeInForce`] options vary depending on the exchange model.
-    ///                     See to the exchange model for details.
+    ///   See to the exchange model for details.
     ///
-    ///  * `order_type` - Available [`OrdType`] options vary depending on the exchange model. See to
-    ///                   the exchange model for details.
+    /// * `order_type` - Available [`OrdType`] options vary depending on the exchange model. See to
+    ///   the exchange model for details.
     ///
-    ///  * `wait` - If true, wait until the order placement response is received.
+    /// * `wait` - If true, wait until the order placement response is received.
     #[allow(clippy::too_many_arguments)]
     fn submit_sell_order(
         &mut self,
@@ -855,7 +867,7 @@ where
         time_in_force: TimeInForce,
         order_type: OrdType,
         wait: bool,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
     /// Places an order.
     fn submit_order(
@@ -863,9 +875,25 @@ where
         asset_no: usize,
         order: OrderRequest,
         wait: bool,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
-    /// Cancels the specified order.
+    /// Modifies an open order.
+    ///
+    /// * `asset_no` - Asset number at which this command will be executed.
+    /// * `order_id` - Order ID to modify.
+    /// * `price` - Order price.
+    /// * `qty` - Quantity to buy.
+    /// * `wait` - If true, wait until the order modification response is received.
+    fn modify(
+        &mut self,
+        asset_no: usize,
+        order_id: OrderId,
+        price: f64,
+        qty: f64,
+        wait: bool,
+    ) -> Result<ElapseResult, Self::Error>;
+
+    /// Cancels an open order.
     ///
     /// * `asset_no` - Asset number at which this command will be executed.
     /// * `order_id` - Order ID to cancel.
@@ -875,7 +903,7 @@ where
         asset_no: usize,
         order_id: OrderId,
         wait: bool,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
     /// Clears inactive orders from the local orders whose status is neither [`Status::New`] nor
     /// [`Status::PartiallyFilled`].
@@ -887,25 +915,25 @@ where
         asset_no: usize,
         order_id: OrderId,
         timeout: i64,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
     /// Wait until the next feed is received, or until timeout.
     fn wait_next_feed(
         &mut self,
         include_order_resp: bool,
         timeout: i64,
-    ) -> Result<bool, Self::Error>;
+    ) -> Result<ElapseResult, Self::Error>;
 
     /// Elapses the specified duration.
     ///
     /// Args:
     /// * `duration` - Duration to elapse. Nanoseconds is the default unit. However, unit should be
-    ///                the same as the data's timestamp unit.
+    ///   the same as the data's timestamp unit.
     ///
     /// Returns:
     ///   `Ok(true)` if the method reaches the specified timestamp within the data. If the end of
     ///   the data is reached before the specified timestamp, it returns `Ok(false)`.
-    fn elapse(&mut self, duration: i64) -> Result<bool, Self::Error>;
+    fn elapse(&mut self, duration: i64) -> Result<ElapseResult, Self::Error>;
 
     /// Elapses time only in backtesting. In live mode, it is ignored.
     ///
@@ -915,12 +943,12 @@ where
     ///
     /// Args:
     /// * `duration` - Duration to elapse. Nanoseconds is the default unit. However, unit should be
-    ///                the same as the data's timestamp unit.
+    ///   the same as the data's timestamp unit.
     ///
     /// Returns:
     ///   `Ok(true)` if the method reaches the specified timestamp within the data. If the end of
     ///   the data is reached before the specified timestamp, it returns `Ok(false)`.
-    fn elapse_bt(&mut self, duration: i64) -> Result<bool, Self::Error>;
+    fn elapse_bt(&mut self, duration: i64) -> Result<ElapseResult, Self::Error>;
 
     /// Closes this backtester or bot.
     fn close(&mut self) -> Result<(), Self::Error>;
@@ -939,10 +967,18 @@ pub trait Recorder {
     type Error;
 
     /// Records the current [`StateValues`].
-    fn record<MD, I>(&mut self, hbt: &mut I) -> Result<(), Self::Error>
+    fn record<MD, I>(&mut self, hbt: &I) -> Result<(), Self::Error>
     where
         I: Bot<MD>,
         MD: MarketDepth;
+}
+
+#[derive(Eq, PartialEq, Copy, Clone, Debug)]
+pub enum ElapseResult {
+    Ok,
+    EndOfData,
+    MarketFeed,
+    OrderResponse,
 }
 
 #[cfg(test)]
@@ -950,8 +986,8 @@ mod tests {
     use crate::{
         prelude::LOCAL_EVENT,
         types::{
-            Event,
             BUY_EVENT,
+            Event,
             LOCAL_BID_DEPTH_CLEAR_EVENT,
             LOCAL_BID_DEPTH_EVENT,
             LOCAL_BID_DEPTH_SNAPSHOT_EVENT,

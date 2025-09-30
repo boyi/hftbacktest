@@ -87,7 +87,7 @@ __all__ = (
     'EXCH_EVENT',
     'LOCAL_EVENT',
     'EXCH_EVENT',
-    'LOCAL_EVENT'
+    'LOCAL_EVENT',
     'BUY_EVENT',
     'SELL_EVENT',
 
@@ -112,7 +112,7 @@ __all__ = (
     'Recorder'
 )
 
-__version__ = '2.2.0'
+__version__ = '2.4.3'
 
 
 class BacktestAsset(BacktestAsset_):

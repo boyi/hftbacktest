@@ -1,5 +1,5 @@
 use std::{
-    collections::{hash_map::Entry, HashMap},
+    collections::{HashMap, hash_map::Entry},
     marker::PhantomData,
     rc::Rc,
     string::FromUtf8Error,
@@ -7,34 +7,31 @@ use std::{
 };
 
 use bincode::{
-    config,
-    error::{DecodeError, EncodeError},
     Decode,
     Encode,
+    config,
+    error::{DecodeError, EncodeError},
 };
 use iceoryx2::{
-    port::{
-        publisher::{Publisher, PublisherLoanError, PublisherSendError},
-        subscriber::{Subscriber, SubscriberReceiveError},
-    },
-    prelude::{ipc, Node, NodeBuilder, ServiceName},
+    port::{LoanError, ReceiveError, SendError, publisher::Publisher, subscriber::Subscriber},
+    prelude::{Node, NodeBuilder, ServiceName, ZeroCopySend, ipc},
 };
 use thiserror::Error;
 
 use crate::{
     live::{
-        ipc::{
-            config::{ChannelConfig, MAX_PAYLOAD_SIZE},
-            Channel,
-        },
         BotError,
         Instrument,
+        ipc::{
+            Channel,
+            config::{ChannelConfig, MAX_PAYLOAD_SIZE},
+        },
     },
     prelude::{LiveEvent, LiveRequest},
     types::BuildError,
 };
 
-#[derive(Default, Debug)]
+#[derive(Default, Debug, ZeroCopySend)]
 #[repr(C)]
 pub struct CustomHeader {
     pub id: u64,
@@ -46,11 +43,11 @@ pub enum ChannelError {
     #[error("BuildError - {0}")]
     BuildError(String),
     #[error("{0:?}")]
-    SubscriberReceive(#[from] SubscriberReceiveError),
+    ReceiveError(#[from] ReceiveError),
     #[error("{0:?}")]
-    PublisherLoan(#[from] PublisherLoanError),
+    LoanError(#[from] LoanError),
     #[error("{0:?}")]
-    PublisherSend(#[from] PublisherSendError),
+    SendError(#[from] SendError),
     #[error("{0:?}")]
     Decode(#[from] DecodeError),
     #[error("{0:?}")]
@@ -192,7 +189,7 @@ pub struct IceoryxReceiver<T> {
 
 impl<T> IceoryxReceiver<T>
 where
-    T: Decode,
+    T: Decode<()>,
 {
     pub fn receive(&self) -> Result<Option<(u64, T)>, ChannelError> {
         match self.subscriber.receive()? {
@@ -219,7 +216,7 @@ pub struct IceoryxChannel<S, R> {
 impl<S, R> IceoryxChannel<S, R>
 where
     S: Encode,
-    R: Decode,
+    R: Decode<()>,
 {
     pub fn new(name: &str) -> Result<Self, ChannelError> {
         let publisher = IceoryxBuilder::new(name).sender()?;
@@ -347,21 +344,18 @@ impl Channel for IceoryxUnifiedChannel {
                     if let Some((dst_id, ev)) = ch
                         .receive()
                         .map_err(|err| BotError::Custom(err.to_string()))?
+                        && (dst_id == 0 || dst_id == id)
                     {
-                        if dst_id == 0 || dst_id == id {
-                            match &ev {
-                                LiveEvent::BatchStart
-                                | LiveEvent::BatchEnd
-                                | LiveEvent::Error(_) => {
-                                    // todo: it may cause incorrect usage.
-                                    return Ok((0, ev));
-                                }
-                                LiveEvent::Feed { symbol, .. }
-                                | LiveEvent::Order { symbol, .. }
-                                | LiveEvent::Position { symbol, .. } => {
-                                    if let Some(inst_no) = ch.symbol_to_inst_no.get(symbol) {
-                                        return Ok((*inst_no, ev));
-                                    }
+                        match &ev {
+                            LiveEvent::BatchStart | LiveEvent::BatchEnd | LiveEvent::Error(_) => {
+                                // todo: it may cause incorrect usage.
+                                return Ok((0, ev));
+                            }
+                            LiveEvent::Feed { symbol, .. }
+                            | LiveEvent::Order { symbol, .. }
+                            | LiveEvent::Position { symbol, .. } => {
+                                if let Some(inst_no) = ch.symbol_to_inst_no.get(symbol) {
+                                    return Ok((*inst_no, ev));
                                 }
                             }
                         }

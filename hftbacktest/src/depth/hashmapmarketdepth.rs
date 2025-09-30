@@ -1,10 +1,10 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
-use super::{ApplySnapshot, L3MarketDepth, L3Order, MarketDepth, INVALID_MAX, INVALID_MIN};
+use super::{ApplySnapshot, INVALID_MAX, INVALID_MIN, L3MarketDepth, L3Order, MarketDepth};
 use crate::{
-    backtest::{data::Data, BacktestError},
+    backtest::{BacktestError, data::Data},
     prelude::{L2MarketDepth, OrderId, Side},
-    types::{Event, BUY_EVENT, DEPTH_SNAPSHOT_EVENT, EXCH_EVENT, LOCAL_EVENT, SELL_EVENT},
+    types::{BUY_EVENT, DEPTH_SNAPSHOT_EVENT, EXCH_EVENT, Event, LOCAL_EVENT, SELL_EVENT},
 };
 
 /// L2/L3 Market depth implementation based on a hash map.
@@ -280,6 +280,16 @@ impl MarketDepth for HashMapMarketDepth {
     }
 
     #[inline(always)]
+    fn best_bid_qty(&self) -> f64 {
+        *self.bid_depth.get(&self.best_bid_tick).unwrap_or(&0.0)
+    }
+
+    #[inline(always)]
+    fn best_ask_qty(&self) -> f64 {
+        *self.ask_depth.get(&self.best_ask_tick).unwrap_or(&0.0)
+    }
+
+    #[inline(always)]
     fn tick_size(&self) -> f64 {
         self.tick_size
     }
@@ -331,6 +341,7 @@ impl ApplySnapshot for HashMapMarketDepth {
         let mut bid_depth = self
             .bid_depth
             .iter()
+            .filter(|&(&px_tick, _)| px_tick <= self.best_bid_tick)
             .map(|(&px_tick, &qty)| (px_tick, qty))
             .collect::<Vec<_>>();
         bid_depth.sort_by(|a, b| b.0.cmp(&a.0));
@@ -351,6 +362,7 @@ impl ApplySnapshot for HashMapMarketDepth {
         let mut ask_depth = self
             .ask_depth
             .iter()
+            .filter(|&(&px_tick, _)| px_tick >= self.best_ask_tick)
             .map(|(&px_tick, &qty)| (px_tick, qty))
             .collect::<Vec<_>>();
         ask_depth.sort_by(|a, b| a.0.cmp(&b.0));
@@ -607,7 +619,7 @@ impl L3MarketDepth for HashMapMarketDepth {
 #[cfg(test)]
 mod tests {
     use crate::{
-        depth::{HashMapMarketDepth, L3MarketDepth, MarketDepth, INVALID_MAX, INVALID_MIN},
+        depth::{HashMapMarketDepth, INVALID_MAX, INVALID_MIN, L3MarketDepth, MarketDepth},
         types::Side,
     };
 

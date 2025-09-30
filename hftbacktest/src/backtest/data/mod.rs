@@ -10,7 +10,7 @@ use std::{
     slice::SliceIndex,
 };
 
-pub use npy::{read_npy_file, read_npz_file, write_npy, Field, NpyDTyped, NpyHeader};
+pub use npy::{Field, NpyDTyped, NpyHeader, read_npy_file, read_npz_file, write_npy};
 pub use reader::{Cache, DataPreprocess, DataSource, FeedLatencyAdjustment, Reader, ReaderBuilder};
 
 use crate::utils::{AlignedArray, CACHE_LINE_SIZE};
@@ -170,8 +170,13 @@ impl DataPtr {
         self.ptr.len()
     }
 
+    /// Returns a pointer offset by the given index.
+    ///
+    /// # Safety
+    /// The `index` must be within the bounds of the array referenced by this pointer.
+    /// Accessing an out-of-bounds offset is undefined behavior.
     #[inline]
-    pub fn at(&self, index: usize) -> *const u8 {
+    pub unsafe fn at(&self, index: usize) -> *const u8 {
         let ptr = self.ptr as *const u8;
         unsafe { ptr.add(index) }
     }

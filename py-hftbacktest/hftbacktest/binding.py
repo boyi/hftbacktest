@@ -18,6 +18,7 @@ from numba import (
     int64,
     float64,
     uint8,
+    from_dtype
 )
 from numba.core.types import voidptr
 from numba.experimental import jitclass
@@ -26,7 +27,7 @@ from . import _hftbacktest
 from .intrinsic import ptr_from_val, address_as_void_pointer, val_from_ptr, is_null_ptr
 from .order import order_dtype, Order, Order_
 from .state import StateValues, StateValues_
-from .types import event_dtype, state_values_dtype, EVENT_ARRAY
+from .types import event_dtype, state_values_dtype, EVENT_ARRAY, DEPTH_EVENT, BUY_EVENT, SELL_EVENT
 
 LIVE_FEATURE = 'build_hashmap_livebot' in dir(_hftbacktest)
 
@@ -47,6 +48,14 @@ hashmapdepth_best_bid.argtypes = [c_void_p]
 hashmapdepth_best_ask = lib.hashmapdepth_best_ask
 hashmapdepth_best_ask.restype = c_double
 hashmapdepth_best_ask.argtypes = [c_void_p]
+
+hashmapdepth_best_bid_qty = lib.hashmapdepth_best_bid_qty
+hashmapdepth_best_bid_qty.restype = c_double
+hashmapdepth_best_bid_qty.argtypes = [c_void_p]
+
+hashmapdepth_best_ask_qty = lib.hashmapdepth_best_ask_qty
+hashmapdepth_best_ask_qty.restype = c_double
+hashmapdepth_best_ask_qty.argtypes = [c_void_p]
 
 hashmapdepth_tick_size = lib.hashmapdepth_tick_size
 hashmapdepth_tick_size.restype = c_double
@@ -106,6 +115,20 @@ class HashMapMarketDepth:
         Returns the best ask price.
         """
         return hashmapdepth_best_ask(self.ptr)
+
+    @property
+    def best_bid_qty(self) -> float64:
+        """
+        Returns the quantity at the best bid price.
+        """
+        return hashmapdepth_best_bid_qty(self.ptr)
+
+    @property
+    def best_ask_qty(self) -> float64:
+        """
+        Returns the quantity at the best ask price.
+        """
+        return hashmapdepth_best_ask_qty(self.ptr)
 
     @property
     def tick_size(self) -> float64:
@@ -178,6 +201,14 @@ roivecdepth_best_ask = lib.roivecdepth_best_ask
 roivecdepth_best_ask.restype = c_double
 roivecdepth_best_ask.argtypes = [c_void_p]
 
+roivecdepth_best_bid_qty = lib.roivecdepth_best_bid_qty
+roivecdepth_best_bid_qty.restype = c_double
+roivecdepth_best_bid_qty.argtypes = [c_void_p]
+
+roivecdepth_best_ask_qty = lib.roivecdepth_best_ask_qty
+roivecdepth_best_ask_qty.restype = c_double
+roivecdepth_best_ask_qty.argtypes = [c_void_p]
+
 roivecdepth_tick_size = lib.roivecdepth_tick_size
 roivecdepth_tick_size.restype = c_double
 roivecdepth_tick_size.argtypes = [c_void_p]
@@ -201,6 +232,14 @@ roivecdepth_bid_depth.argtypes = [c_void_p, POINTER(c_uint64)]
 roivecdepth_ask_depth = lib.roivecdepth_ask_depth
 roivecdepth_ask_depth.restype = c_void_p
 roivecdepth_ask_depth.argtypes = [c_void_p, POINTER(c_uint64)]
+
+roivecdepth_roi_lb_tick = lib.roivecdepth_roi_lb_tick
+roivecdepth_roi_lb_tick.restype = c_int64
+roivecdepth_roi_lb_tick.argtypes = [c_void_p]
+
+roivecdepth_roi_ub_tick = lib.roivecdepth_roi_ub_tick
+roivecdepth_roi_ub_tick.restype = c_int64
+roivecdepth_roi_ub_tick.argtypes = [c_void_p]
 
 
 class ROIVectorMarketDepth:
@@ -234,6 +273,20 @@ class ROIVectorMarketDepth:
     def best_ask(self) -> float64:
         """
         Returns the best ask price.
+        """
+        return roivecdepth_best_ask(self.ptr)
+
+    @property
+    def best_bid_qty(self) -> float64:
+        """
+        Returns the quantity at the best bid price.
+        """
+        return roivecdepth_best_bid(self.ptr)
+
+    @property
+    def best_ask_qty(self) -> float64:
+        """
+        Returns the quantity at the best ask price.
         """
         return roivecdepth_best_ask(self.ptr)
 
@@ -310,6 +363,20 @@ class ROIVectorMarketDepth:
             val_from_ptr(len_ptr),
             float64
         )
+
+    @property
+    def roi_lb_tick(self) -> int64:
+        """
+        Returns the lower bound of the range of interest, in ticks.
+        """
+        return roivecdepth_roi_lb_tick(self.ptr)
+
+    @property
+    def roi_ub_tick(self) -> int64:
+        """
+        Returns the upper bound of the range of interest, in ticks.
+        """
+        return roivecdepth_roi_ub_tick(self.ptr)
 
 
 ROIVectorMarketDepth_ = jitclass(ROIVectorMarketDepth)
@@ -540,6 +607,10 @@ hashmapbt_submit_sell_order.argtypes = [
     c_bool
 ]
 
+hashmapbt_modify = lib.hashmapbt_modify
+hashmapbt_modify.restype = c_int64
+hashmapbt_modify.argtypes = [c_void_p, c_uint64, c_uint64, c_double, c_double, c_bool]
+
 hashmapbt_cancel = lib.hashmapbt_cancel
 hashmapbt_cancel.restype = c_int64
 hashmapbt_cancel.argtypes = [c_void_p, c_uint64, c_uint64, c_bool]
@@ -748,6 +819,24 @@ class HashMapMarketDepthBacktest:
         """
         return hashmapbt_submit_sell_order(self.ptr, asset_no, order_id, price, qty, time_in_force, order_type, wait)
 
+    def modify(self, asset_no: uint64, order_id: uint64, price: float, qty: float, wait: bool) -> int64:
+        """
+        Modifies the specified order.
+
+        Args:
+            asset_no: Asset number at which this command will be executed.
+            order_id: Order ID to modify.
+            price: Order price.
+            qty: Order quantity.
+            wait: If `True`, wait until the order cancel response is received.
+
+        Returns:
+            * `0` when it successfully modifies an order.
+            * `1` when it reaches the end of the data, if `wait` is `True`.
+            * Otherwise, an error occurred.
+        """
+        return hashmapbt_modify(self.ptr, asset_no, order_id, price, qty, wait)
+
     def cancel(self, asset_no: uint64, order_id: uint64, wait: bool) -> int64:
         """
         Cancels the specified order.
@@ -805,8 +894,10 @@ class HashMapMarketDepthBacktest:
                      However, unit should be the same as the data’s timestamp unit.
 
         Returns:
-            * `0` when it receives a feed or an order response, or reaches the timeout.
+            * `0` when it reaches the timeout.
             * `1` when it reaches the end of the data.
+            * `2` when it receives a market feed.
+            * `3` when it receives an order response if `include_order_resp` is `True`.
             * Otherwise, an error occurred.
         """
         return hashmapbt_wait_next_feed(self.ptr, include_order_resp, timeout)
@@ -962,6 +1053,10 @@ roivecbt_submit_sell_order.argtypes = [
     c_uint8,
     c_bool
 ]
+
+roivecbt_modify = lib.roivecbt_modify
+roivecbt_modify.restype = c_int64
+roivecbt_modify.argtypes = [c_void_p, c_uint64, c_uint64, c_double, c_double, c_bool]
 
 roivecbt_cancel = lib.roivecbt_cancel
 roivecbt_cancel.restype = c_int64
@@ -1167,6 +1262,24 @@ class ROIVectorMarketDepthBacktest:
         """
         return roivecbt_submit_sell_order(self.ptr, asset_no, order_id, price, qty, time_in_force, order_type, wait)
 
+    def modify(self, asset_no: uint64, order_id: uint64, price: float, qty: float, wait: bool) -> int64:
+        """
+        Modifies the specified order.
+
+        Args:
+            asset_no: Asset number at which this command will be executed.
+            order_id: Order ID to modify.
+            price: Order price.
+            qty: Order quantity.
+            wait: If `True`, wait until the order cancel response is received.
+
+        Returns:
+            * `0` when it successfully modifies an order.
+            * `1` when it reaches the end of the data, if `wait` is `True`.
+            * Otherwise, an error occurred.
+        """
+        return roivecbt_modify(self.ptr, asset_no, order_id, price, qty, wait)
+
     def cancel(self, asset_no: uint64, order_id: uint64, wait: bool) -> int64:
         """
         Cancels the specified order.
@@ -1224,8 +1337,10 @@ class ROIVectorMarketDepthBacktest:
                      However, unit should be the same as the data’s timestamp unit.
 
         Returns:
-            * `0` when it receives a feed or an order response, or reaches the timeout.
+            * `0` when it reaches the timeout.
             * `1` when it reaches the end of the data.
+            * `2` when it receives a market feed.
+            * `3` when it receives an order response if `include_order_resp` is `True`.
             * Otherwise, an error occurred.
         """
         return roivecbt_wait_next_feed(self.ptr, include_order_resp, timeout)
@@ -1312,6 +1427,85 @@ class ROIVectorMarketDepthBacktest:
 
 ROIVectorMarketDepthBacktest_ = jitclass(ROIVectorMarketDepthBacktest)
 
+
+fusemarketdepth_new = lib.fusemarketdepth_new
+fusemarketdepth_new.restype = c_void_p
+fusemarketdepth_new.argtypes = [c_double, c_double]
+
+fusemarketdepth_free = lib.fusemarketdepth_free
+fusemarketdepth_free.restype = c_void_p
+fusemarketdepth_free.argtypes = [c_void_p]
+
+fusemarketdepth_process_event = lib.fusemarketdepth_process_event
+fusemarketdepth_process_event.restype = c_bool
+fusemarketdepth_process_event.argtypes = [c_void_p, c_void_p, c_bool]
+
+fusemarketdepth_fused_events = lib.fusemarketdepth_fused_events
+fusemarketdepth_fused_events.restype = c_void_p
+fusemarketdepth_fused_events.argtypes = [c_void_p, POINTER(c_uint64)]
+
+
+class FuseMarketDepth:
+    """
+    This combines the real-time Level-1 book ticker stream with the conflated Level-2 depth stream to produce the
+    most frequent and granular depth events possible.
+
+    Args:
+        tick_size: tick size for the asset being processed.
+        lot_size: lot size for the asset being processed.
+    """
+
+    ptr: voidptr
+    buf: from_dtype(event_dtype)[:]
+
+    def __init__(self, tick_size: float64, lot_size: float64):
+        self.ptr = fusemarketdepth_new(tick_size, lot_size)
+        self.buf = np.zeros(1, event_dtype)
+
+    # def __del__(self):
+    #     fusemarketdepth_free(self.ptr)
+
+    def close(self) -> None:
+        """
+        Releases resources associated with this `FuseMarketDepth` instance.
+
+        This method must be called to free the underlying memory allocated by the native implementation.
+        """
+        fusemarketdepth_free(self.ptr)
+
+    def process_event(self, ev: EVENT_ARRAY, index: uint64, add: bool) -> None:
+        """
+        Processes a market event at the given index.
+
+        Args:
+            ev: The array of events to process.
+            index: The index of the event in the array to process.
+            add: If `True`, the event is added to the fused events.
+                 If `False`, the event is used to update market depth for future processing, but is not included in the
+                 fused output.
+        """
+        ev_ptr = ev.ctypes.data + 64 * index
+        ok = fusemarketdepth_process_event(self.ptr, ev_ptr, add)
+        if not ok:
+            raise ValueError
+
+    @property
+    def fused_events(self) -> EVENT_ARRAY:
+        """
+        Returns the array of fused events generated so far.
+        """
+        length = uint64(0)
+        len_ptr = ptr_from_val(length)
+        ptr = fusemarketdepth_fused_events(self.ptr, len_ptr)
+        return numba.carray(
+            address_as_void_pointer(ptr),
+            val_from_ptr(len_ptr),
+            event_dtype
+        )
+
+FuseMarketDepth_ = jitclass(FuseMarketDepth)
+
+
 if LIVE_FEATURE:
     hashmaplive_elapse = lib.hashmaplive_elapse
     hashmaplive_elapse.restype = c_int64
@@ -1378,6 +1572,10 @@ if LIVE_FEATURE:
         c_uint8,
         c_bool
     ]
+
+    hashmaplive_modify = lib.hashmaplive_modify
+    hashmaplive_modify.restype = c_int64
+    hashmaplive_modify.argtypes = [c_void_p, c_uint64, c_uint64, c_double, c_double, c_bool]
 
     hashmaplive_cancel = lib.hashmaplive_cancel
     hashmaplive_cancel.restype = c_int64
@@ -1583,6 +1781,24 @@ if LIVE_FEATURE:
             """
             return hashmaplive_submit_sell_order(self.ptr, asset_no, order_id, price, qty, time_in_force, order_type, wait)
 
+        def modify(self, asset_no: uint64, order_id: uint64, price: float, qty: float, wait: bool) -> int64:
+            """
+            Modifies the specified order.
+
+            Args:
+                asset_no: Asset number at which this command will be executed.
+                order_id: Order ID to modify.
+                price: Order price.
+                qty: Order quantity.
+                wait: If `True`, wait until the order cancel response is received.
+
+            Returns:
+                * `0` when it successfully modifies an order.
+                * `1` when it reaches the end of the data, if `wait` is `True`.
+                * Otherwise, an error occurred.
+            """
+            return hashmaplive_modify(self.ptr, asset_no, order_id, price, qty, wait)
+
         def cancel(self, asset_no: uint64, order_id: uint64, wait: bool) -> int64:
             """
             Cancels the specified order.
@@ -1634,14 +1850,16 @@ if LIVE_FEATURE:
             Waits until the next feed is received, or until timeout.
 
             Args:
-                include_order_resp: If set to `True`, it will return when any order response is received, in addition to the
-                                    next feed.
+                include_order_resp: If set to `True`, it will return when any order response is received, in addition to
+                                    the next feed.
                 timeout: Timeout for waiting for the next feed or an order response. Nanoseconds is the default unit.
                          However, unit should be the same as the data’s timestamp unit.
 
             Returns:
-                * `0` when it receives a feed or an order response, or reaches the timeout.
+                * `0` when it reaches the timeout.
                 * `1` when it reaches the end of the data.
+                * `2` when it receives a market feed.
+                * `3` when it receives an order response if `include_order_resp` is `True`.
                 * Otherwise, an error occurred.
             """
             return hashmaplive_wait_next_feed(self.ptr, include_order_resp, timeout)
@@ -1797,6 +2015,10 @@ if LIVE_FEATURE:
         c_uint8,
         c_bool
     ]
+
+    roiveclive_modify = lib.roiveclive_modify
+    roiveclive_modify.restype = c_int64
+    roiveclive_modify.argtypes = [c_void_p, c_uint64, c_uint64, c_double, c_double, c_bool]
 
     roiveclive_cancel = lib.roiveclive_cancel
     roiveclive_cancel.restype = c_int64
@@ -2002,6 +2224,24 @@ if LIVE_FEATURE:
             """
             return roiveclive_submit_sell_order(self.ptr, asset_no, order_id, price, qty, time_in_force, order_type, wait)
 
+        def modify(self, asset_no: uint64, order_id: uint64, price: float, qty: float, wait: bool) -> int64:
+            """
+            Modifies the specified order.
+
+            Args:
+                asset_no: Asset number at which this command will be executed.
+                order_id: Order ID to modify.
+                price: Order price.
+                qty: Order quantity.
+                wait: If `True`, wait until the order cancel response is received.
+
+            Returns:
+                * `0` when it successfully modifies an order.
+                * `1` when it reaches the end of the data, if `wait` is `True`.
+                * Otherwise, an error occurred.
+            """
+            return roiveclive_modify(self.ptr, asset_no, order_id, price, qty, wait)
+
         def cancel(self, asset_no: uint64, order_id: uint64, wait: bool) -> int64:
             """
             Cancels the specified order.
@@ -2053,14 +2293,16 @@ if LIVE_FEATURE:
             Waits until the next feed is received, or until timeout.
 
             Args:
-                include_order_resp: If set to `True`, it will return when any order response is received, in addition to the
-                                    next feed.
+                include_order_resp: If set to `True`, it will return when any order response is received, in addition to
+                                    the next feed.
                 timeout: Timeout for waiting for the next feed or an order response. Nanoseconds is the default unit.
                          However, unit should be the same as the data’s timestamp unit.
 
             Returns:
-                * `0` when it receives a feed or an order response, or reaches the timeout.
+                * `0` when it reaches the timeout.
                 * `1` when it reaches the end of the data.
+                * `2` when it receives a market feed.
+                * `3` when it receives an order response if `include_order_resp` is `True`.
                 * Otherwise, an error occurred.
             """
             return roiveclive_wait_next_feed(self.ptr, include_order_resp, timeout)

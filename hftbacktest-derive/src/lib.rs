@@ -4,15 +4,15 @@ use proc_macro2::{Ident, Span};
 use quote::quote;
 use syn::{
     self,
-    braced,
-    bracketed,
-    parse::{Parse, ParseStream},
-    parse_macro_input,
     Data,
     DeriveInput,
     Error,
     Fields,
     Token,
+    braced,
+    bracketed,
+    parse::{Parse, ParseStream},
+    parse_macro_input,
 };
 
 #[proc_macro_derive(NpyDTyped)]
@@ -274,12 +274,11 @@ pub fn build_asset(input: TokenStream) -> TokenStream {
                                     .unwrap()
                             };
 
-                            let ob_local_to_exch = OrderBus::new();
-                            let ob_exch_to_local = OrderBus::new();
-
                             let asset_type = #at_ident::new(#(#at_args.clone()),*);
                             let latency_model = #lm_ident::new(#(#lm_args.clone()),*);
                             let fee_model = #fm_ident::new(#(#fm_args.clone()),*);
+
+                            let (order_e2l, order_l2e) = order_bus(latency_model);
 
                             let mut market_depth = #depth_construct;
                             match #asset.initial_snapshot.as_ref() {
@@ -296,10 +295,8 @@ pub fn build_asset(input: TokenStream) -> TokenStream {
                             let local: Box<dyn LocalProcessor<#marketdepth>> = Box::new(#local_ident::new(
                                 market_depth,
                                 State::new(asset_type.clone(), fee_model.clone()),
-                                latency_model.clone(),
                                 #asset.last_trades_cap,
-                                ob_local_to_exch.clone(),
-                                ob_exch_to_local.clone(),
+                                order_l2e,
                             ));
 
                             let mut market_depth = #depth_construct;
@@ -319,10 +316,8 @@ pub fn build_asset(input: TokenStream) -> TokenStream {
                             let exch: Box<dyn Processor> = Box::new(#exch_ident::new(
                                 market_depth,
                                 State::new(asset_type, fee_model.clone()),
-                                latency_model,
                                 queue_model,
-                                ob_exch_to_local,
-                                ob_local_to_exch,
+                                order_e2l,
                             ));
 
                             Asset {

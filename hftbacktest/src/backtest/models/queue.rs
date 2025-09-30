@@ -1,23 +1,23 @@
 use std::{
     any::Any,
-    collections::{hash_map::Entry, HashMap, HashSet, VecDeque},
+    collections::{HashMap, HashSet, VecDeque, hash_map::Entry},
     marker::PhantomData,
 };
 
 use crate::{
     backtest::BacktestError,
-    depth::{MarketDepth, INVALID_MAX, INVALID_MIN},
+    depth::{INVALID_MAX, INVALID_MIN, MarketDepth},
     types::{
         AnyClone,
+        BUY_EVENT,
         Event,
         OrdType,
         Order,
         OrderId,
+        SELL_EVENT,
         Side,
         Status,
         TimeInForce,
-        BUY_EVENT,
-        SELL_EVENT,
     },
 };
 
@@ -36,7 +36,7 @@ where
     /// Adjusts the estimation values when market depth changes at the same price.
     fn depth(&self, order: &mut Order, prev_qty: f64, new_qty: f64, depth: &MD);
 
-    fn is_filled(&self, order: &Order, depth: &MD) -> f64;
+    fn is_filled(&self, order: &mut Order, depth: &MD) -> f64;
 }
 
 /// Provides a conservative queue position model, where your order's queue position advances only
@@ -83,10 +83,12 @@ where
         *front_q_qty = front_q_qty.min(new_qty);
     }
 
-    fn is_filled(&self, order: &Order, depth: &MD) -> f64 {
-        let front_q_qty = order.q.as_any().downcast_ref::<f64>().unwrap();
-        if (front_q_qty / depth.lot_size()).round() < 0.0 {
-            (-front_q_qty / depth.lot_size()).floor() * depth.lot_size()
+    fn is_filled(&self, order: &mut Order, depth: &MD) -> f64 {
+        let front_q_qty = order.q.as_any_mut().downcast_mut::<f64>().unwrap();
+        let exec = (-*front_q_qty / depth.lot_size()).round() as i64;
+        if exec > 0 {
+            *front_q_qty = 0.0;
+            (exec as f64) * depth.lot_size()
         } else {
             0.0
         }
@@ -94,7 +96,7 @@ where
 }
 
 /// Stores the values needed for queue position estimation and adjustment for [`ProbQueueModel`].
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct QueuePos {
     front_q_qty: f64,
     cum_trade_qty: f64,
@@ -202,10 +204,12 @@ where
         q.front_q_qty = est_front.min(new_qty);
     }
 
-    fn is_filled(&self, order: &Order, depth: &MD) -> f64 {
-        let q = order.q.as_any().downcast_ref::<QueuePos>().unwrap();
-        if (q.front_q_qty / depth.lot_size()).round() < 0.0 {
-            (-q.front_q_qty / depth.lot_size()).floor() * depth.lot_size()
+    fn is_filled(&self, order: &mut Order, depth: &MD) -> f64 {
+        let q = order.q.as_any_mut().downcast_mut::<QueuePos>().unwrap();
+        let exec = (-q.front_q_qty / depth.lot_size()).round() as i64;
+        if exec > 0 {
+            q.front_q_qty = 0.0;
+            (exec as f64) * depth.lot_size()
         } else {
             0.0
         }
@@ -422,7 +426,7 @@ pub trait L3QueueModel<MD> {
     fn modify_backtest_order(
         &mut self,
         order_id: OrderId,
-        order: Order,
+        order: &mut Order,
         depth: &MD,
     ) -> Result<(), BacktestError>;
 
@@ -771,7 +775,7 @@ where
     fn modify_backtest_order(
         &mut self,
         order_id: OrderId,
-        mut order: Order,
+        order: &mut Order,
         _depth: &MD,
     ) -> Result<(), BacktestError> {
         order.q = Box::new(L3OrderSource::Backtest);
@@ -789,11 +793,12 @@ where
                     let order_in_q = queue.get_mut(i).unwrap();
                     if order_in_q.is_backtest_order() && order_in_q.order_id == order_id {
                         if (order_in_q.price_tick != order.price_tick)
-                            || (order_in_q.leaves_qty < order.leaves_qty)
+                            || (order_in_q.leaves_qty < order.qty)
                         {
                             let mut prev_order = queue.remove(i).unwrap();
                             let prev_order_price_tick = prev_order.price_tick;
-                            prev_order.update(&order);
+                            prev_order.update(order);
+                            prev_order.leaves_qty = prev_order.qty;
                             // if queue.len() == 0 {
                             //     self.bid_queue.remove(&order_price_tick);
                             // }
@@ -806,8 +811,8 @@ where
                                 queue.push_back(prev_order);
                             }
                         } else {
-                            order_in_q.leaves_qty = order.leaves_qty;
                             order_in_q.qty = order.qty;
+                            order_in_q.leaves_qty = order.qty;
                             order_in_q.exch_timestamp = order.exch_timestamp;
                         }
                         processed = true;
@@ -825,11 +830,12 @@ where
                     let order_in_q = queue.get_mut(i).unwrap();
                     if order_in_q.is_backtest_order() && order_in_q.order_id == order_id {
                         if (order_in_q.price_tick != order.price_tick)
-                            || (order_in_q.leaves_qty < order.leaves_qty)
+                            || (order_in_q.leaves_qty < order.qty)
                         {
                             let mut prev_order = queue.remove(i).unwrap();
                             let prev_order_price_tick = prev_order.price_tick;
-                            prev_order.update(&order);
+                            prev_order.update(order);
+                            prev_order.leaves_qty = prev_order.qty;
                             // if queue.len() == 0 {
                             //     self.bid_queue.remove(&order_price_tick);
                             // }
@@ -842,8 +848,8 @@ where
                                 queue.push_back(prev_order);
                             }
                         } else {
-                            order_in_q.leaves_qty = order.leaves_qty;
                             order_in_q.qty = order.qty;
+                            order_in_q.leaves_qty = order.qty;
                             order_in_q.exch_timestamp = order.exch_timestamp;
                         }
                         processed = true;
@@ -1070,13 +1076,11 @@ where
                 self.backtest_orders
                     .retain(|_, (order_side, _)| *order_side != side);
 
-                let expired = self
-                    .bid_queue
+                self.bid_queue
                     .drain()
                     .flat_map(|(_, q)| q)
                     .filter(|order| order.is_backtest_order())
-                    .collect();
-                expired
+                    .collect()
             }
             Side::Sell => {
                 self.mkt_feed_orders
@@ -1084,13 +1088,11 @@ where
                 self.backtest_orders
                     .retain(|_, (order_side, _)| *order_side != side);
 
-                let expired = self
-                    .ask_queue
+                self.ask_queue
                     .drain()
                     .flat_map(|(_, q)| q)
                     .filter(|order| order.is_backtest_order())
-                    .collect();
-                expired
+                    .collect()
             }
             Side::None => {
                 self.mkt_feed_orders.clear();
@@ -1120,7 +1122,7 @@ where
 #[cfg(test)]
 mod l3_tests {
     use crate::{
-        backtest::{models::L3FIFOQueueModel, L3QueueModel},
+        backtest::{L3QueueModel, models::L3FIFOQueueModel},
         prelude::{
             Event,
             HashMapMarketDepth,

@@ -8,8 +8,15 @@ description = "A high-frequency trading and market-making backtesting tool accou
 readme = "README.rst"
 authors = [{ name = "nkaz001", email = "nkaz001@protonmail.com" }]
 license = { file = "LICENSE" }
-version = "2.2.0"
-requires-python = ">=3.10"
+version = "2.4.3"
+requires-python = ">=3.11"
+dependencies = [
+ "numpy >=2.0, <2.3",
+ "numba ~= 0.61",
+ "polars",
+ "matplotlib",
+ "holoviews"
+]
 
 keywords = ["hft", "high-frequency trading", "trading", "market-making", "backtest"]
 classifiers = [
@@ -23,9 +30,9 @@ classifiers = [
   "Programming Language :: Python",
   "Programming Language :: Python :: 3",
   "Programming Language :: Python :: 3 :: Only",
-  "Programming Language :: Python :: 3.10",
   "Programming Language :: Python :: 3.11",
   "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
   "Programming Language :: Rust",
   "Topic :: Scientific/Engineering",
   "Topic :: Office/Business :: Financial :: Investment"
@@ -35,11 +42,6 @@ classifiers = [
 Repository = "https://github.com/nkaz001/hftbacktest"
 
 [project.optional-dependencies]
-numpy = ["numpy ~= 2.0"]
-numba = ["numba ~= 0.60"]
-polars = ["polars"]
-holoviews = ["holoviews"]
-matplotlib = ["matplotlib"]
 databento = ["databento"]
 
 [tool.maturin]

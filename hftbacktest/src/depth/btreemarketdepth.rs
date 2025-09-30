@@ -1,18 +1,18 @@
-use std::collections::{hash_map::Entry, BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, hash_map::Entry};
 
 use super::{
     ApplySnapshot,
+    INVALID_MAX,
+    INVALID_MIN,
     L2MarketDepth,
     L3MarketDepth,
     L3Order,
     MarketDepth,
-    INVALID_MAX,
-    INVALID_MIN,
 };
 use crate::{
-    backtest::{data::Data, BacktestError},
+    backtest::{BacktestError, data::Data},
     prelude::{OrderId, Side},
-    types::{Event, BUY_EVENT, SELL_EVENT},
+    types::{BUY_EVENT, Event, SELL_EVENT},
 };
 
 /// L2 Market depth implementation based on a B-Tree map.
@@ -188,6 +188,16 @@ impl MarketDepth for BTreeMarketDepth {
     #[inline(always)]
     fn best_ask_tick(&self) -> i64 {
         self.best_ask_tick
+    }
+
+    #[inline(always)]
+    fn best_bid_qty(&self) -> f64 {
+        *self.bid_depth.get(&self.best_bid_tick).unwrap_or(&0.0)
+    }
+
+    #[inline(always)]
+    fn best_ask_qty(&self) -> f64 {
+        *self.ask_depth.get(&self.best_ask_tick).unwrap_or(&0.0)
     }
 
     #[inline(always)]
@@ -434,7 +444,7 @@ impl L3MarketDepth for BTreeMarketDepth {
 #[cfg(test)]
 mod tests {
     use crate::{
-        depth::{BTreeMarketDepth, L3MarketDepth, MarketDepth, INVALID_MAX, INVALID_MIN},
+        depth::{BTreeMarketDepth, INVALID_MAX, INVALID_MIN, L3MarketDepth, MarketDepth},
         types::Side,
     };
 

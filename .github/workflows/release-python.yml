@@ -17,8 +17,8 @@ on:
         default: false
 
 env:
-  PYTHON_VERSION: '3.10'
-  RUST_VERSION: '1.84.1'
+  PYTHON_VERSION: '3.11'
+  RUST_VERSION: '1.90'
 
 permissions:
   contents: read
@@ -42,13 +42,16 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: For ARMv7
+        if: ${{ matrix.platform.target == 'armv7' }}
+        run: sudo apt-get install -y gcc-multilib
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
           target: ${{ matrix.platform.target }}
           rust-toolchain: ${{ env.RUST_VERSION }}
           args: --manifest-path=py-hftbacktest/Cargo.toml --release --out dist --find-interpreter
-          manylinux: 2_24
+          manylinux: 2_28
       - name: Upload wheels
         uses: actions/upload-artifact@v4
         with:
@@ -73,6 +76,9 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
+      - name: For ARMv7
+        if: ${{ matrix.platform.target == 'armv7' }}
+        run: sudo apt-get install -y gcc-multilib
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:
@@ -101,9 +107,9 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           architecture: ${{ matrix.platform.target }}
-      - name: Install dependencies
-        run: |
-          choco install openssl
+#      - name: Install dependencies
+#        run: |
+#          choco install openssl
       - name: Build wheels
         uses: PyO3/maturin-action@v1
         with:

@@ -1,10 +1,10 @@
-use std::collections::{hash_map::Entry, HashMap};
+use std::collections::{HashMap, hash_map::Entry};
 
-use super::{ApplySnapshot, L3MarketDepth, L3Order, MarketDepth, INVALID_MAX, INVALID_MIN};
+use super::{ApplySnapshot, INVALID_MAX, INVALID_MIN, L3MarketDepth, L3Order, MarketDepth};
 use crate::{
-    backtest::{data::Data, BacktestError},
+    backtest::{BacktestError, data::Data},
     prelude::{L2MarketDepth, OrderId, Side},
-    types::{Event, BUY_EVENT, SELL_EVENT},
+    types::{BUY_EVENT, Event, SELL_EVENT},
 };
 
 /// L2/L3 market depth implementation based on a vector within the range of interest.
@@ -103,12 +103,35 @@ impl ROIVectorMarketDepth {
         Ok(())
     }
 
+    /// Returns the bid market depth array, which contains the quantity at each price. Its length is
+    /// `ROI upper bound in ticks + 1 - ROI lower bound in ticks`, the array contains the quantities
+    /// at prices from the ROI lower bound to the ROI upper bound.
+    /// The index is calculated as `price in ticks - ROI lower bound in ticks`.
+    /// Respectively, the price is `(index + ROI lower bound in ticks) * tick_size`.
     pub fn bid_depth(&self) -> &[f64] {
         self.bid_depth.as_slice()
     }
 
+    /// Returns the ask market depth array, which contains the quantity at each price. Its length is
+    /// `ROI upper bound in ticks + 1 - ROI lower bound in ticks`, the array contains the quantities
+    /// at prices from the ROI lower bound to the ROI upper bound.
+    /// The index is calculated as `price in ticks - ROI lower bound in ticks`.
+    /// Respectively, the price is `(index + ROI lower bound in ticks) * tick_size`.
     pub fn ask_depth(&self) -> &[f64] {
         self.ask_depth.as_slice()
+    }
+
+    /// Returns the lower and the upper bound of the range of interest, in price.
+    pub fn roi(&self) -> (f64, f64) {
+        (
+            self.roi_lb as f64 * self.tick_size,
+            self.roi_ub as f64 * self.tick_size,
+        )
+    }
+
+    /// Returns the lower and the upper bound of the range of interest, in ticks.
+    pub fn roi_tick(&self) -> (i64, i64) {
+        (self.roi_lb, self.roi_ub)
     }
 }
 
@@ -369,6 +392,34 @@ impl MarketDepth for ROIVectorMarketDepth {
     #[inline(always)]
     fn best_ask_tick(&self) -> i64 {
         self.best_ask_tick
+    }
+
+    #[inline(always)]
+    fn best_bid_qty(&self) -> f64 {
+        if self.best_bid_tick < self.roi_lb || self.best_bid_tick > self.roi_ub {
+            // This is outside the range of interest.
+            0.0
+        } else {
+            unsafe {
+                *self
+                    .bid_depth
+                    .get_unchecked((self.best_bid_tick - self.roi_lb) as usize)
+            }
+        }
+    }
+
+    #[inline(always)]
+    fn best_ask_qty(&self) -> f64 {
+        if self.best_ask_tick < self.roi_lb || self.best_ask_tick > self.roi_ub {
+            // This is outside the range of interest.
+            f64::NAN
+        } else {
+            unsafe {
+                *self
+                    .ask_depth
+                    .get_unchecked((self.best_ask_tick - self.roi_lb) as usize)
+            }
+        }
     }
 
     #[inline(always)]
@@ -754,7 +805,7 @@ impl L3MarketDepth for ROIVectorMarketDepth {
 #[cfg(test)]
 mod tests {
     use crate::{
-        depth::{L3MarketDepth, MarketDepth, ROIVectorMarketDepth, INVALID_MAX, INVALID_MIN},
+        depth::{INVALID_MAX, INVALID_MIN, L3MarketDepth, MarketDepth, ROIVectorMarketDepth},
         types::Side,
     };
 

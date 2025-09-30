@@ -1,14 +1,14 @@
 use std::{
     fs::File,
-    io::{Error, Write},
+    io::{BufWriter, Error, Write},
     path::Path,
 };
 
 use hftbacktest_derive::NpyDTyped;
-use zip::{write::SimpleFileOptions, ZipWriter};
+use zip::{ZipWriter, write::SimpleFileOptions};
 
 use crate::{
-    backtest::data::{write_npy, POD},
+    backtest::data::{POD, write_npy},
     depth::MarketDepth,
     types::{Bot, Recorder},
 };
@@ -37,7 +37,7 @@ pub struct BacktestRecorder {
 impl Recorder for BacktestRecorder {
     type Error = Error;
 
-    fn record<MD, I>(&mut self, hbt: &mut I) -> Result<(), Self::Error>
+    fn record<MD, I>(&mut self, hbt: &I) -> Result<(), Self::Error>
     where
         MD: MarketDepth,
         I: Bot<MD>,
@@ -93,7 +93,7 @@ impl BacktestRecorder {
         let prefix = prefix.as_ref();
         for (asset_no, values) in self.values.iter().enumerate() {
             let file_path = path.as_ref().join(format!("{prefix}{asset_no}.csv"));
-            let mut file = File::create(file_path)?;
+            let mut file = BufWriter::new(File::create(file_path)?);
             writeln!(
                 file,
                 "timestamp,balance,position,fee,trading_volume,trading_value,num_trades,price",
@@ -111,15 +111,7 @@ impl BacktestRecorder {
             {
                 writeln!(
                     file,
-                    "{},{},{},{},{},{},{},{}",
-                    timestamp,
-                    balance,
-                    position,
-                    fee,
-                    trading_volume,
-                    trading_value,
-                    num_trades,
-                    mid_price,
+                    "{timestamp},{balance},{position},{fee},{trading_volume},{trading_value},{num_trades},{mid_price}"
                 )?;
             }
         }

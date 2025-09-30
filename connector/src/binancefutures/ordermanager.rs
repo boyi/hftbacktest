@@ -7,11 +7,11 @@ use tracing::error;
 
 use crate::{
     binancefutures::{
-        msg::{rest::OrderResponse, stream::OrderTradeUpdate},
         BinanceFuturesError,
+        msg::{rest::OrderResponse, stream::OrderTradeUpdate},
     },
     connector::GetOrders,
-    utils::{generate_rand_string, RefSymbolOrderId, SymbolOrderId},
+    utils::{RefSymbolOrderId, SymbolOrderId, generate_rand_string},
 };
 
 #[derive(Debug)]
@@ -77,6 +77,8 @@ impl OrderManager {
             order_ext.order.time_in_force = resp.order.time_in_force;
             order_ext.order.exch_timestamp = resp.transaction_time * 1_000_000;
             order_ext.order.status = resp.order.order_status;
+            order_ext.order.exec_price_tick =
+                (resp.order.last_filled_price / order_ext.order.tick_size).round() as i64;
             order_ext.order.exec_qty = resp.order.order_last_filled_qty;
             order_ext.order.order_type = resp.order.order_type;
         }
@@ -117,7 +119,9 @@ impl OrderManager {
             }
             BinanceFuturesError::OrderError { code: -1008, .. } => {
                 // Server is currently overloaded with other requests. Please try again in a few minutes.
-                error!("Server is currently overloaded with other requests. Please try again in a few minutes.");
+                error!(
+                    "Server is currently overloaded with other requests. Please try again in a few minutes."
+                );
             }
             BinanceFuturesError::OrderError { code: -2019, .. } => {
                 // Margin is insufficient.
@@ -208,6 +212,8 @@ impl OrderManager {
             order_ext.order.time_in_force = resp.time_in_force;
             order_ext.order.exch_timestamp = resp.update_time * 1_000_000;
             order_ext.order.status = resp.status;
+            // The last filled price isn't available in the REST response.
+            // Execution details are expected to be received via the WebSocket stream.
             order_ext.order.exec_qty = resp.executed_qty;
             order_ext.order.order_type = resp.ty;
             order_ext.order.req = Status::None;

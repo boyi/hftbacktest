@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    time::{Duration, Instant},
+};
 
 use chrono::Utc;
 use futures_util::{SinkExt, StreamExt};
@@ -6,25 +9,26 @@ use hftbacktest::{live::ipc::TO_ALL, prelude::*};
 use tokio::{
     select,
     sync::{
-        broadcast::{error::RecvError, Receiver},
-        mpsc::{unbounded_channel, UnboundedReceiver, UnboundedSender},
+        broadcast::{Receiver, error::RecvError},
+        mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel},
     },
+    time,
 };
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::{client::IntoClientRequest, Message},
+    tungstenite::{Message, client::IntoClientRequest},
 };
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 use crate::{
     binancefutures::{
+        BinanceFuturesError,
         msg::{
             rest,
             stream,
             stream::{EventStream, Stream},
         },
         rest::BinanceFuturesClient,
-        BinanceFuturesError,
     },
     connector::PublishEvent,
     utils::{generate_rand_string, parse_depth, parse_px_qty_tup},
@@ -147,6 +151,9 @@ impl MarketDataStream {
             }
             EventStream::Trade(data) => match parse_px_qty_tup(data.price, data.qty) {
                 Ok((px, qty)) => {
+                    if data.type_ != "MARKET" {
+                        return;
+                    }
                     self.ev_tx
                         .send(PublishEvent::LiveEvent(LiveEvent::Feed {
                             symbol: data.symbol,
@@ -259,11 +266,19 @@ impl MarketDataStream {
         let request = url.into_client_request()?;
         let (ws_stream, _) = connect_async(request).await?;
         let (mut write, mut read) = ws_stream.split();
+        let mut ping_checker = time::interval(Duration::from_secs(10));
+        let mut last_ping = Instant::now();
 
         loop {
             select! {
                 Some((symbol, data)) = self.rest_rx.recv() => {
                     self.process_snapshot(symbol, data);
+                }
+                _ = ping_checker.tick() => {
+                    if last_ping.elapsed() > Duration::from_secs(300) {
+                        warn!("Ping timeout.");
+                        return Err(BinanceFuturesError::ConnectionInterrupted);
+                    }
                 }
                 msg = self.symbol_rx.recv() => match msg {
                     Ok(symbol) => {
@@ -300,6 +315,7 @@ impl MarketDataStream {
                     }
                     Some(Ok(Message::Ping(data))) => {
                         write.send(Message::Pong(data)).await?;
+                        last_ping = Instant::now();
                     }
                     Some(Ok(Message::Close(close_frame))) => {
                         return Err(BinanceFuturesError::ConnectionAbort(

@@ -15,21 +15,44 @@ This framework is designed for developing high frequency trading and market maki
 Key Features
 ============
 
-The experimental features are currently in the early stages of development, having been completely rewritten in Rust to
-support the following features.
-
 * Working in `Numba <https://numba.pydata.org/>`_ JIT function (Python).
 * Complete tick-by-tick simulation with a customizable time interval or based on the feed and order receipt.
-* Full order book reconstruction based on L2 Market-By-Price and L3 Market-By-Order feeds.
+* Full order book reconstruction based on Level-2 Market-By-Price and Level-3 Market-By-Order feeds.
 * Backtest accounting for both feed and order latency, using provided models or your own custom model.
 * Order fill simulation that takes into account the order queue position, using provided models or your own custom model.
 * Backtesting of multi-asset and multi-exchange models
-* Deployment of a live trading bot using the same algorithm code: currently for Binance Futures and Bybit. (Rust-only)
+* Deployment of a live trading bot for quick prototyping and testing using the same algorithm code: currently for Binance Futures and Bybit. (Rust-only)
 
 Documentation
 =============
 
 See `full document here <https://hftbacktest.readthedocs.io/>`_.
+
+Tutorials you’ll likely find interesting:
+
+* `High-Frequency Grid Trading - Simplified from GLFT <https://hftbacktest.readthedocs.io/en/latest/tutorials/High-Frequency%20Grid%20Trading%20-%20Simplified%20from%20GLFT.html>`_
+* `Market Making with Alpha - Order Book Imbalance <https://hftbacktest.readthedocs.io/en/latest/tutorials/Market%20Making%20with%20Alpha%20-%20Order%20Book%20Imbalance.html>`_
+* `Market Making with Alpha - APT <https://hftbacktest.readthedocs.io/en/latest/tutorials/Market%20Making%20with%20Alpha%20-%20APT.html>`_
+* `Accelerated Backtesting <https://hftbacktest.readthedocs.io/en/latest/tutorials/Accelerated%20Backtesting.html>`_
+* `Pricing Framework <https://hftbacktest.readthedocs.io/en/latest/tutorials/Pricing%20Framework.html>`_
+
+Why Accurate Backtesting Matters — Not Just Conservative Approach
+=================================================================
+
+Trading is a highly competitive field where only the small edges usually exist, but they can still make a significant
+difference. Because of this, backtesting must accurately simulate real-world conditions.: It should neither rely on an
+overly pessimistic approach that hides these small edges and profit opportunities, nor on an overly optimistic one that
+overstates them through unrealistic simulation. Or at the very least, you should clearly understand what differs from
+live trading and by how much, since sometimes fully accurate backtesting is not practical due to the time it requires.
+
+This is not about overfitting at the start—before you even consider issues like overfitting, you need confidence that
+your backtesting truly reflects real-world execution. For example, if you run a live trading strategy in January 2025,
+the backtest for that exact period should produce results that closely align with the actual results. Once you’ve
+validated that your backtesting can accurately reproduce live trading results, then you can proceed to deeper research,
+optimization, and considerations around overfitting.
+
+Accurate backtesting is the foundation. Without it, all further analysis—whether conservative or aggressive—becomes
+unreliable.
 
 Getting started
 ===============
@@ -166,6 +189,8 @@ Tutorials
 * `Integrating Custom Data <https://hftbacktest.readthedocs.io/en/latest/tutorials/Integrating%20Custom%20Data.html>`_
 * `Making Multiple Markets - Introduction <https://hftbacktest.readthedocs.io/en/latest/tutorials/Making%20Multiple%20Markets%20-%20Introduction.html>`_
 * `High-Frequency Grid Trading <https://hftbacktest.readthedocs.io/en/latest/tutorials/High-Frequency%20Grid%20Trading.html>`_
+* `High-Frequency Grid Trading - Comparison Across Other Exchanges <https://hftbacktest.readthedocs.io/en/latest/tutorials/High-Frequency%20Grid%20Trading%20-%20Comparison%20Across%20Other%20Exchanges.html>`_
+* `High-Frequency Grid Trading - Simplified from GLFT <https://hftbacktest.readthedocs.io/en/latest/tutorials/High-Frequency%20Grid%20Trading%20-%20Simplified%20from%20GLFT.html>`_
 * `Impact of Order Latency <https://hftbacktest.readthedocs.io/en/latest/tutorials/Impact%20of%20Order%20Latency.html>`_
 * `Order Latency Data <https://hftbacktest.readthedocs.io/en/latest/tutorials/Order%20Latency%20Data.html>`_
 * `Guéant–Lehalle–Fernandez-Tapia Market Making Model and Grid Trading <https://hftbacktest.readthedocs.io/en/latest/tutorials/GLFT%20Market%20Making%20Model%20and%20Grid%20Trading.html>`_
@@ -176,6 +201,9 @@ Tutorials
 * `Market Making with Alpha - Basis <https://hftbacktest.readthedocs.io/en/latest/tutorials/Market%20Making%20with%20Alpha%20-%20Basis.html>`_
 * `Market Making with Alpha - APT <https://hftbacktest.readthedocs.io/en/latest/tutorials/Market%20Making%20with%20Alpha%20-%20APT.html>`_
 * `Queue-Based Market Making in Large Tick Size Assets <https://hftbacktest.readthedocs.io/en/latest/tutorials/Queue-Based%20Market%20Making%20in%20Large%20Tick%20Size%20Assets.html>`_
+* `Fusing Depth Data <https://hftbacktest.readthedocs.io/en/latest/tutorials/Fusing%20Depth%20Data.html>`_
+* `Accelerated Backtesting <https://hftbacktest.readthedocs.io/en/latest/tutorials/Accelerated%20Backtesting.html>`_
+* `Pricing Framework <https://hftbacktest.readthedocs.io/en/latest/tutorials/Pricing%20Framework.html>`_
 
 Examples
 ========
@@ -205,7 +233,7 @@ The following items are examples of contributions you can make to this project:
 
 Please see the `roadmap <https://github.com/nkaz001/hftbacktest/blob/master/ROADMAP.md>`_.
 
-.. |python| image:: https://shields.io/badge/python-3.10-blue
+.. |python| image:: https://shields.io/badge/python-3.11+-blue
     :alt: Python Version
     :target: https://www.python.org/
 
@@ -241,7 +269,7 @@ Please see the `roadmap <https://github.com/nkaz001/hftbacktest/blob/master/ROAD
     :target: https://github.com/nkaz001/hftbacktest
     :alt: Github
 
-.. |rustc| image:: https://shields.io/badge/rustc-1.84-blue
+.. |rustc| image:: https://shields.io/badge/rustc-1.90-blue
     :alt: Rust Version
     :target: https://www.rust-lang.org/
 
@@ -256,6 +284,8 @@ Please see the `roadmap <https://github.com/nkaz001/hftbacktest/blob/master/ROAD
    tutorials/Integrating Custom Data
    tutorials/Making Multiple Markets - Introduction
    tutorials/High-Frequency Grid Trading
+   tutorials/High-Frequency Grid Trading - Comparison Across Other Exchanges
+   tutorials/High-Frequency Grid Trading - Simplified from GLFT
    tutorials/Impact of Order Latency
    tutorials/Order Latency Data
    tutorials/GLFT Market Making Model and Grid Trading
@@ -267,6 +297,8 @@ Please see the `roadmap <https://github.com/nkaz001/hftbacktest/blob/master/ROAD
    tutorials/Market Making with Alpha - Basis
    tutorials/Market Making with Alpha - APT
    tutorials/Queue-Based Market Making in Large Tick Size Assets
+   tutorials/Fusing Depth Data
+   tutorials/Accelerated Backtesting
    tutorials/examples
 
 .. toctree::
@@ -280,6 +312,7 @@ Please see the `roadmap <https://github.com/nkaz001/hftbacktest/blob/master/ROAD
    Order Fill <order_fill>
    JIT Compilation Overhead <jit_compilation_overhead>
    Debugging Backtesting and Live Discrepancies <debugging_backtesting_and_live_discrepancies>
+   Market Maker Program <market_maker_program>
 
 .. toctree::
    :maxdepth: 2

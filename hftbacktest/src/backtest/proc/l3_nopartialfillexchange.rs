@@ -1,21 +1,15 @@
 use crate::{
     backtest::{
+        BacktestError,
         assettype::AssetType,
         models::{FeeModel, L3QueueModel, LatencyModel},
-        order::OrderBus,
+        order::ExchToLocal,
         proc::Processor,
         state::State,
-        BacktestError,
     },
     depth::L3MarketDepth,
     prelude::OrdType,
     types::{
-        Event,
-        Order,
-        OrderId,
-        Side,
-        Status,
-        TimeInForce,
         BUY_EVENT,
         EXCH_ASK_ADD_ORDER_EVENT,
         EXCH_ASK_DEPTH_CLEAR_EVENT,
@@ -26,7 +20,13 @@ use crate::{
         EXCH_EVENT,
         EXCH_FILL_EVENT,
         EXCH_MODIFY_ORDER_EVENT,
+        Event,
+        Order,
+        OrderId,
         SELL_EVENT,
+        Side,
+        Status,
+        TimeInForce,
     },
 };
 
@@ -63,13 +63,10 @@ where
     MD: L3MarketDepth,
     FM: FeeModel,
 {
-    orders_to: OrderBus,
-    orders_from: OrderBus,
-
     depth: MD,
     state: State<AT, FM>,
-    order_latency: LM,
     queue_model: QM,
+    order_e2l: ExchToLocal<LM>,
 }
 
 impl<AT, LM, QM, MD, FM> L3NoPartialFillExchange<AT, LM, QM, MD, FM>
@@ -85,39 +82,15 @@ where
     pub fn new(
         depth: MD,
         state: State<AT, FM>,
-        order_latency: LM,
         queue_model: QM,
-        orders_to: OrderBus,
-        orders_from: OrderBus,
+        order_e2l: ExchToLocal<LM>,
     ) -> Self {
         Self {
-            orders_to,
-            orders_from,
             depth,
             state,
-            order_latency,
             queue_model,
+            order_e2l,
         }
-    }
-
-    fn process_recv_order_(
-        &mut self,
-        mut order: Order,
-        recv_timestamp: i64,
-    ) -> Result<(), BacktestError> {
-        // Processes a new order.
-        if order.req == Status::New {
-            order.req = Status::None;
-            self.ack_new(order, recv_timestamp)?;
-        }
-        // Processes a cancel order.
-        else if order.req == Status::Canceled {
-            order.req = Status::None;
-            self.ack_cancel(order, recv_timestamp)?;
-        } else {
-            return Err(BacktestError::InvalidOrderRequest);
-        }
-        Ok(())
     }
 
     fn expired(&mut self, mut order: Order, timestamp: i64) -> Result<(), BacktestError> {
@@ -125,14 +98,12 @@ where
         order.leaves_qty = 0.0;
         order.status = Status::Expired;
         order.exch_timestamp = timestamp;
-        let local_recv_timestamp =
-            order.exch_timestamp + self.order_latency.response(timestamp, &order);
 
-        self.orders_to.append(order, local_recv_timestamp);
+        self.order_e2l.respond(order);
         Ok(())
     }
 
-    fn fill(
+    fn fill<const MAKE_RESPONSE: bool>(
         &mut self,
         order: &mut Order,
         timestamp: i64,
@@ -157,11 +128,12 @@ where
         order.leaves_qty = 0.0;
         order.status = Status::Filled;
         order.exch_timestamp = timestamp;
-        let local_recv_timestamp =
-            order.exch_timestamp + self.order_latency.response(timestamp, order);
 
         self.state.apply_fill(order);
-        self.orders_to.append(order.clone(), local_recv_timestamp);
+
+        if MAKE_RESPONSE {
+            self.order_e2l.respond(order.clone());
+        }
         Ok(())
     }
 
@@ -176,7 +148,7 @@ where
             .on_best_bid_update(prev_best_tick, new_best_tick)?;
         for mut order in filled {
             let price_tick = order.price_tick;
-            self.fill(&mut order, timestamp, true, price_tick)?;
+            self.fill::<true>(&mut order, timestamp, true, price_tick)?;
         }
         Ok(())
     }
@@ -192,12 +164,12 @@ where
             .on_best_ask_update(prev_best_tick, new_best_tick)?;
         for mut order in filled {
             let price_tick = order.price_tick;
-            self.fill(&mut order, timestamp, true, price_tick)?;
+            self.fill::<true>(&mut order, timestamp, true, price_tick)?;
         }
         Ok(())
     }
 
-    fn ack_new(&mut self, mut order: Order, timestamp: i64) -> Result<(), BacktestError> {
+    fn ack_new(&mut self, order: &mut Order, timestamp: i64) -> Result<(), BacktestError> {
         if self.queue_model.contains_backtest_order(order.order_id) {
             return Err(BacktestError::OrderIdExist);
         }
@@ -210,18 +182,19 @@ where
                         match order.time_in_force {
                             TimeInForce::GTX => {
                                 order.status = Status::Expired;
-
                                 order.exch_timestamp = timestamp;
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order.clone(), local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::GTC | TimeInForce::FOK | TimeInForce::IOC => {
                                 // Since this always fills the full quantity, both FOK and IOC
                                 // orders are also fully filled at the best price.
                                 // Takes the market.
-                                self.fill(&mut order, timestamp, false, self.depth.best_ask_tick())
+                                self.fill::<false>(
+                                    order,
+                                    timestamp,
+                                    false,
+                                    self.depth.best_ask_tick(),
+                                )
                             }
                             TimeInForce::Unsupported => Err(BacktestError::InvalidOrderRequest),
                         }
@@ -234,19 +207,11 @@ where
 
                                 self.queue_model
                                     .add_backtest_order(order.clone(), &self.depth)?;
-
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order, local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::FOK | TimeInForce::IOC => {
                                 order.status = Status::Expired;
-
                                 order.exch_timestamp = timestamp;
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order.clone(), local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::Unsupported => Err(BacktestError::InvalidOrderRequest),
@@ -255,7 +220,7 @@ where
                 }
                 OrdType::Market => {
                     // Takes the market.
-                    self.fill(&mut order, timestamp, false, self.depth.best_ask_tick())
+                    self.fill::<false>(order, timestamp, false, self.depth.best_ask_tick())
                 }
                 OrdType::Unsupported => Err(BacktestError::InvalidOrderRequest),
             }
@@ -267,18 +232,19 @@ where
                         match order.time_in_force {
                             TimeInForce::GTX => {
                                 order.status = Status::Expired;
-
                                 order.exch_timestamp = timestamp;
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order.clone(), local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::GTC | TimeInForce::FOK | TimeInForce::IOC => {
                                 // Since this always fills the full quantity, both FOK and IOC
                                 // orders are also fully filled at the best price.
                                 // Takes the market.
-                                self.fill(&mut order, timestamp, false, self.depth.best_bid_tick())
+                                self.fill::<false>(
+                                    order,
+                                    timestamp,
+                                    false,
+                                    self.depth.best_bid_tick(),
+                                )
                             }
                             TimeInForce::Unsupported => Err(BacktestError::InvalidOrderRequest),
                         }
@@ -291,19 +257,11 @@ where
 
                                 self.queue_model
                                     .add_backtest_order(order.clone(), &self.depth)?;
-
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order, local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::FOK | TimeInForce::IOC => {
                                 order.status = Status::Expired;
-
                                 order.exch_timestamp = timestamp;
-                                let local_recv_timestamp =
-                                    timestamp + self.order_latency.response(timestamp, &order);
-                                self.orders_to.append(order.clone(), local_recv_timestamp);
                                 Ok(())
                             }
                             TimeInForce::Unsupported => Err(BacktestError::InvalidOrderRequest),
@@ -312,42 +270,55 @@ where
                 }
                 OrdType::Market => {
                     // Takes the market.
-                    self.fill(&mut order, timestamp, false, self.depth.best_bid_tick())
+                    self.fill::<false>(order, timestamp, false, self.depth.best_bid_tick())
                 }
                 OrdType::Unsupported => Err(BacktestError::InvalidOrderRequest),
             }
         }
     }
 
-    fn ack_cancel(&mut self, mut order: Order, timestamp: i64) -> Result<(), BacktestError> {
+    fn ack_cancel(&mut self, order: &mut Order, timestamp: i64) -> Result<(), BacktestError> {
         match self
             .queue_model
             .cancel_backtest_order(order.order_id, &self.depth)
         {
-            Ok(mut exch_order) => {
-                // Makes the response.
-                exch_order.status = Status::Canceled;
-                exch_order.exch_timestamp = timestamp;
-                let local_recv_timestamp =
-                    timestamp + self.order_latency.response(timestamp, &exch_order);
-                self.orders_to
-                    .append(exch_order.clone(), local_recv_timestamp);
+            Ok(exch_order) => {
+                let _ = std::mem::replace(order, exch_order);
+
+                order.status = Status::Canceled;
+                order.exch_timestamp = timestamp;
                 Ok(())
             }
             Err(BacktestError::OrderNotFound) => {
                 order.req = Status::Rejected;
                 order.exch_timestamp = timestamp;
-                let local_recv_timestamp =
-                    timestamp + self.order_latency.response(timestamp, &order);
-                self.orders_to.append(order, local_recv_timestamp);
                 Ok(())
             }
             Err(e) => Err(e),
         }
     }
 
-    fn ack_modify(&mut self, mut order: Order, timestamp: i64) -> Result<(), BacktestError> {
-        todo!()
+    fn ack_modify<const RESET_QUEUE_POS: bool>(
+        &mut self,
+        order: &mut Order,
+        timestamp: i64,
+    ) -> Result<(), BacktestError> {
+        match self
+            .queue_model
+            .modify_backtest_order(order.order_id, order, &self.depth)
+        {
+            Ok(()) => {
+                order.leaves_qty = order.qty;
+                order.exch_timestamp = timestamp;
+                Ok(())
+            }
+            Err(BacktestError::OrderNotFound) => {
+                order.req = Status::Rejected;
+                order.exch_timestamp = timestamp;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 }
 
@@ -428,7 +399,7 @@ where
                 let timestamp = event.exch_ts;
                 for mut order in filled {
                     let price_tick = order.price_tick;
-                    self.fill(&mut order, timestamp, true, price_tick)?;
+                    self.fill::<true>(&mut order, timestamp, true, price_tick)?;
                 }
             }
         }
@@ -441,25 +412,39 @@ where
         timestamp: i64,
         _wait_resp_order_id: Option<OrderId>,
     ) -> Result<bool, BacktestError> {
-        // Processes the order part.
-        while !self.orders_from.is_empty() {
-            let recv_timestamp = self.orders_from.earliest_timestamp().unwrap();
-            if timestamp == recv_timestamp {
-                let (order, _) = self.orders_from.pop_front().unwrap();
-                self.process_recv_order_(order, recv_timestamp)?;
-            } else {
-                assert!(recv_timestamp > timestamp);
-                break;
+        while let Some(mut order) = self.order_e2l.receive(timestamp) {
+            // Processes a new order.
+            if order.req == Status::New {
+                order.req = Status::None;
+                self.ack_new(&mut order, timestamp)?;
             }
+            // Processes a cancel order.
+            else if order.req == Status::Canceled {
+                order.req = Status::None;
+                self.ack_cancel(&mut order, timestamp)?;
+            }
+            // Processes a modify order.
+            else if order.req == Status::Replaced {
+                order.req = Status::None;
+                self.ack_modify::<false>(&mut order, timestamp)?;
+            } else {
+                return Err(BacktestError::InvalidOrderRequest);
+            }
+            // Makes the response.
+            self.order_e2l.respond(order);
         }
         Ok(false)
     }
 
     fn earliest_recv_order_timestamp(&self) -> i64 {
-        self.orders_from.earliest_timestamp().unwrap_or(i64::MAX)
+        self.order_e2l
+            .earliest_recv_order_timestamp()
+            .unwrap_or(i64::MAX)
     }
 
     fn earliest_send_order_timestamp(&self) -> i64 {
-        self.orders_to.earliest_timestamp().unwrap_or(i64::MAX)
+        self.order_e2l
+            .earliest_send_order_timestamp()
+            .unwrap_or(i64::MAX)
     }
 }

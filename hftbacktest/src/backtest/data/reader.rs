@@ -4,8 +4,8 @@ use std::{
     io::{Error as IoError, ErrorKind},
     rc::Rc,
     sync::{
-        mpsc::{channel, Receiver, Sender},
         Arc,
+        mpsc::{Receiver, Sender, channel},
     },
     thread,
 };
@@ -14,12 +14,12 @@ use uuid::Uuid;
 
 use crate::{
     backtest::{
+        BacktestError,
         data::{
-            npy::{read_npy_file, read_npz_file, NpyDTyped},
             Data,
             POD,
+            npy::{NpyDTyped, read_npy_file, read_npz_file},
         },
-        BacktestError,
     },
     types::Event,
 };
@@ -367,7 +367,10 @@ where
                     LoadDataResult {
                         result: Err(err), ..
                     } => {
-                        return Err(BacktestError::DataError(err));
+                        return Err(BacktestError::DataError(std::io::Error::new(
+                            err.kind(),
+                            format!("Failed to read file '{key}': {err}"),
+                        )));
                     }
                 }
             }

@@ -1,20 +1,16 @@
 use std::collections::HashMap;
 
 pub use btreemarketdepth::BTreeMarketDepth;
+pub use fuse::FusedHashMapMarketDepth;
 pub use hashmapmarketdepth::HashMapMarketDepth;
 pub use roivectormarketdepth::ROIVectorMarketDepth;
 
 use crate::prelude::Side;
 
 mod btreemarketdepth;
+mod fuse;
 mod hashmapmarketdepth;
 mod roivectormarketdepth;
-
-#[cfg(any(feature = "unstable_fuse", doc))]
-mod fuse;
-
-#[cfg(any(feature = "unstable_fuse", doc))]
-pub use fuse::FusedHashMapMarketDepth;
 
 use crate::{
     backtest::data::Data,
@@ -44,6 +40,12 @@ pub trait MarketDepth {
     /// Returns the best ask price in ticks.
     /// If there is no best ask, it returns [`INVALID_MAX`].
     fn best_ask_tick(&self) -> i64;
+
+    /// Returns the quantity at the best bid price.
+    fn best_bid_qty(&self) -> f64;
+
+    /// Returns the quantity at the best ask price.
+    fn best_ask_qty(&self) -> f64;
 
     /// Returns the tick size.
     fn tick_size(&self) -> f64;

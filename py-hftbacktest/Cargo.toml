@@ -1,7 +1,7 @@
 [package]
 name = "py-hftbacktest"
-version = "0.2.0"
-edition = "2021"
+version = "2.4.3"
+edition = "2024"
 
 [lib]
 name = "hftbacktest"
@@ -12,6 +12,6 @@ default = []
 live = ["hftbacktest/live"]
 
 [dependencies]
-pyo3 = { version = "0.23.1", features = ["extension-module"] }
-hftbacktest = { path = "../hftbacktest", default-features = false, features = ["backtest"] }
+pyo3 = { version = "0.25", features = ["extension-module"] }
+hftbacktest = { path = "../hftbacktest", default-features = false, features = ["backtest", "s3"] }
 hftbacktest-derive = { path = "../hftbacktest-derive" }

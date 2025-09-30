@@ -29,13 +29,13 @@ where
     /// Submits a new order.
     ///
     /// * `order_id` - The unique order ID; there should not be any existing order with the same ID
-    ///                on both local and exchange sides.
+    ///   on both local and exchange sides.
     /// * `price` - Order price.
     /// * `qty` - Quantity to buy.
     /// * `order_type` - Available [`OrdType`] options vary depending on the exchange model. See to
-    ///                   the exchange model for details.
+    ///   the exchange model for details.
     /// * `time_in_force` - Available [`TimeInForce`] options vary depending on the exchange model.
-    ///                     See to the exchange model for details.
+    ///   See to the exchange model for details.
     /// * `current_timestamp` - The current backtesting timestamp.
     #[allow(clippy::too_many_arguments)]
     fn submit_order(
@@ -49,7 +49,21 @@ where
         current_timestamp: i64,
     ) -> Result<(), BacktestError>;
 
-    /// Cancels the specified order.
+    /// Modifies an open order.
+    ///
+    /// * `order_id` - Order ID to modify.
+    /// * `price` - Order price.
+    /// * `qty` - Quantity to buy.
+    /// * `current_timestamp` - The current backtesting timestamp.
+    fn modify(
+        &mut self,
+        order_id: OrderId,
+        price: f64,
+        qty: f64,
+        current_timestamp: i64,
+    ) -> Result<(), BacktestError>;
+
+    /// Cancels an open order.
     ///
     /// * `order_id` - Order ID to cancel.
     /// * `current_timestamp` - The current backtesting timestamp.
